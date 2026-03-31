@@ -11,7 +11,7 @@
     <div class="loading-card">
       <p class="eyebrow">Telegram WebApp</p>
       <h1>Crash Rocket</h1>
-      <p id="loadingStatus">Подключаемся к игровому серверу...</p>
+      <p id="loadingStatus">Подключаемся к игровому серверу и загружаем профиль...</p>
       <div class="loading-bar"><span></span></div>
     </div>
   </div>
@@ -19,158 +19,205 @@
   <div class="app-shell hidden" id="appShell">
     <header class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">Crash Platform</p>
+        <p class="eyebrow">Crash Mode</p>
         <h1>Crash Rocket</h1>
-        <p class="sub">Плавная ракетка с кошельком, профилем, статистикой и реферальной программой.</p>
+        <p class="sub">Два слота ставок, плавный полет ракеты, кошелек с историей операций, личная статистика и реферальная программа.</p>
       </div>
       <div class="balance-grid">
         <div class="balance-card">
-          <span>Stars</span>
+          <span>Stars Balance</span>
           <strong id="starsBalance">0</strong>
         </div>
         <div class="balance-card">
-          <span>TON</span>
+          <span>TON Balance</span>
           <strong id="tonBalance">0.00</strong>
         </div>
       </div>
     </header>
 
     <nav class="top-nav">
-      <button class="nav-chip active" data-tab="game">Игра</button>
-      <button class="nav-chip" data-tab="profile">Профиль</button>
-      <button class="nav-chip" data-tab="wallet">Кошелек</button>
-      <button class="nav-chip" data-tab="stats">Статистика</button>
-      <button class="nav-chip" data-tab="referrals">Рефералы</button>
+      <button class="top-tab active" data-tab="game">Игра</button>
+      <button class="top-tab" data-tab="profile">Профиль</button>
+      <button class="top-tab" data-tab="wallet">Кошелек</button>
+      <button class="top-tab" data-tab="stats">Статистика</button>
+      <button class="top-tab" data-tab="referrals">Рефералы</button>
     </nav>
 
-    <main class="page-grid">
+    <main class="layout">
       <section class="main-column">
-        <section class="panel stage-panel tab-panel active" data-panel="game">
+        <section class="panel tab-panel active" data-panel="game">
           <div class="status-bar">
             <div>
               <small>Статус</small>
-              <div id="statusLine">Выбери ставку и начни раунд.</div>
+              <div id="statusLine">Подготовь до двух ставок и запусти раунд.</div>
             </div>
             <div class="status-pills">
-              <div class="mode-pill" id="authBadge">AUTH</div>
-              <div class="mode-pill" id="autoCashoutBadge">Auto OFF</div>
+              <div class="mode-pill" id="authBadge">Auth</div>
+              <div class="mode-pill" id="currencyBadge">Stars</div>
             </div>
           </div>
 
-          <div class="stage" id="stage">
-            <div class="grid-glow"></div>
+          <div class="stage">
+            <div class="scanlines"></div>
+            <div class="stars-field"></div>
             <div class="flash-layer" id="flashLayer"></div>
             <div class="impact-ring" id="impactRing"></div>
-            <div class="crash-banner" id="crashBanner">BOOM</div>
-            <div class="multiplier-wrap">
-              <span class="metric-caption">LIVE MULTIPLIER</span>
-              <div class="multiplier" id="multiplier">1.00x</div>
-            </div>
-            <div class="status-overlay" id="roundMeta">Ожидание запуска</div>
-            <div class="scene-grid">
-              <div class="scene-line x"></div>
-              <div class="scene-line y"></div>
-            </div>
+            <div class="rocket-shadow" id="rocketShadow"></div>
+            <div class="trail trail-glow" id="trailGlow"></div>
+            <div class="trail trail-main" id="trailMain"></div>
             <div class="rocket-path">
-              <div class="rocket-shadow" id="rocketShadow"></div>
-              <div class="rocket" id="rocket">🚀</div>
+              <div class="rocket" id="rocket">
+                <div class="rocket-window"></div>
+                <div class="rocket-fin rocket-fin-left"></div>
+                <div class="rocket-fin rocket-fin-right"></div>
+                <div class="rocket-flame"></div>
+              </div>
             </div>
+            <div class="metric-panel">
+              <div class="metric-caption">LIVE MULTIPLIER</div>
+              <div class="multiplier" id="multiplier">1.00x</div>
+              <div class="round-meta" id="roundMeta">Ожидание нового раунда</div>
+            </div>
+            <div class="crash-banner" id="crashBanner">BOOM</div>
           </div>
 
-          <div class="control-grid">
+          <div class="game-grid">
             <div class="control-card">
               <label>Валюта</label>
               <div class="chip-group">
-                <button class="chip active currency-chip" data-currency="XTR">Stars</button>
-                <button class="chip currency-chip" data-currency="TON">TON</button>
+                <button class="chip active" data-currency="XTR">Stars</button>
+                <button class="chip" data-currency="TON">TON</button>
               </div>
             </div>
 
             <div class="control-card">
+              <label>Автокэшаут по умолчанию</label>
+              <div class="inline-row">
+                <input id="defaultAutoCashout" type="number" min="1.01" step="0.01" placeholder="Например 2.00">
+                <button id="saveDefaultAutoCashout" class="ghost small">Сохранить</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="slots-grid" id="slotsGrid">
+            <div class="slot-card" data-slot="1">
+              <div class="slot-head">
+                <h3>Слот 1</h3>
+                <div class="slot-status" id="slotStatus1">Готов</div>
+              </div>
               <label>Ставка</label>
-              <input id="betAmount" type="number" step="0.1" min="0" value="100">
-            </div>
-
-            <div class="control-card">
+              <input id="betAmount1" type="number" step="0.1" min="0" value="100">
               <label>Автокэшаут</label>
-              <select id="autoCashout">
-                <option value="">OFF</option>
-                <option value="1.5">1.50x</option>
-                <option value="2">2.00x</option>
-                <option value="3">3.00x</option>
-                <option value="5">5.00x</option>
-              </select>
+              <input id="autoCashout1" type="number" min="1.01" step="0.01" placeholder="По умолчанию">
+              <div class="slot-meta" id="slotMeta1">Ставка не активна</div>
+              <button id="cashout1" class="danger slot-button">Забрать слот 1</button>
             </div>
 
-            <div class="control-card actions-card">
-              <button id="startRound" class="primary">Старт</button>
-              <button id="cashout" class="danger">Забрать</button>
+            <div class="slot-card" data-slot="2">
+              <div class="slot-head">
+                <h3>Слот 2</h3>
+                <div class="slot-status" id="slotStatus2">Отключен</div>
+              </div>
+              <label>Ставка</label>
+              <input id="betAmount2" type="number" step="0.1" min="0" value="0">
+              <label>Автокэшаут</label>
+              <input id="autoCashout2" type="number" min="1.01" step="0.01" placeholder="По умолчанию">
+              <div class="slot-meta" id="slotMeta2">Второй слот можно включить отдельной ставкой</div>
+              <button id="cashout2" class="danger slot-button">Забрать слот 2</button>
             </div>
+          </div>
+
+          <div class="launch-row">
+            <button id="startRound" class="primary wide">Запустить раунд</button>
           </div>
         </section>
 
         <section class="panel tab-panel" data-panel="profile">
-          <div class="section-header">
-            <h2>Профиль</h2>
-            <span class="section-note" id="playerName">Игрок</span>
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Profile</p>
+              <h2 id="playerName">Игрок</h2>
+            </div>
+            <div class="plan-badge" id="planBadge">FREE</div>
           </div>
-          <div id="profileStats" class="cards-grid"></div>
+          <div class="stats-grid" id="profileStats"></div>
         </section>
 
         <section class="panel tab-panel" data-panel="wallet">
-          <div class="section-header">
-            <h2>Кошелек</h2>
-            <span class="section-note">Демо депозит и вывод</span>
-          </div>
-          <div class="wallet-layout">
+          <div class="section-head">
             <div>
-              <h3>Быстрый депозит</h3>
-              <div id="walletDeposits" class="button-grid"></div>
-            </div>
-            <div>
-              <h3>Быстрый вывод</h3>
-              <div id="walletWithdraws" class="button-grid"></div>
+              <p class="eyebrow">Wallet</p>
+              <h2>Депозит, вывод и история</h2>
             </div>
           </div>
-          <div class="wallet-reset">
-            <button id="resetWallet" class="ghost">Сбросить демо баланс</button>
+          <div class="wallet-grid">
+            <div class="wallet-card">
+              <h3>Пополнение</h3>
+              <div class="wallet-actions" id="walletDeposits"></div>
+            </div>
+            <div class="wallet-card">
+              <h3>Вывод</h3>
+              <div class="wallet-actions" id="walletWithdraws"></div>
+            </div>
           </div>
+          <div class="stats-grid" id="walletStats"></div>
+          <div class="panel-block">
+            <h3>История кошелька</h3>
+            <div id="walletHistory" class="stack"></div>
+          </div>
+          <button id="resetWallet" class="ghost">Сбросить demo-баланс</button>
         </section>
 
         <section class="panel tab-panel" data-panel="stats">
-          <div class="section-header">
-            <h2>Статистика</h2>
-            <span class="section-note">История и показатели</span>
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Stats</p>
+              <h2>Реальная статистика игрока</h2>
+            </div>
           </div>
-          <div id="statsCards" class="cards-grid"></div>
-          <div class="history-block">
-            <h3>Последние раунды</h3>
+          <div class="stats-grid" id="statsCards"></div>
+          <div class="panel-block">
+            <h3>Последние ставки</h3>
             <div id="history" class="stack"></div>
           </div>
         </section>
 
         <section class="panel tab-panel" data-panel="referrals">
-          <div class="section-header">
-            <h2>Реферальная программа</h2>
-            <span class="section-note">Приглашай друзей и получай бонусы</span>
-          </div>
-          <div id="referralCards" class="cards-grid"></div>
-          <div class="referral-box">
-            <label>Реферальный код</label>
-            <div class="referral-row">
-              <input id="referralCode" type="text" readonly>
-              <button id="copyReferral" class="ghost">Копировать</button>
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Referral</p>
+              <h2>Реферальная программа</h2>
             </div>
-            <p id="referralText" class="muted-text"></p>
+          </div>
+          <div class="stats-grid" id="referralCards"></div>
+          <div class="referral-box">
+            <div>
+              <label>Твой код</label>
+              <div class="referral-code" id="referralCode">ROCKET</div>
+            </div>
+            <button id="copyReferral" class="primary">Копировать</button>
+          </div>
+          <div class="panel-block">
+            <h3>Активировать код</h3>
+            <div class="inline-row">
+              <input id="referralInput" type="text" placeholder="Введи код друга">
+              <button id="activateReferral" class="ghost small">Активировать</button>
+            </div>
+          </div>
+          <div class="panel-block">
+            <h3>Приглашенные игроки</h3>
+            <div id="referralList" class="stack"></div>
           </div>
         </section>
       </section>
 
-      <aside class="side-column">
+      <aside class="sidebar">
         <section class="panel">
-          <div class="section-header">
-            <h2>Лидерборд</h2>
-            <span class="section-note">Топ игроков</span>
+          <div class="section-head compact">
+            <div>
+              <p class="eyebrow">Live</p>
+              <h2>Лидерборд</h2>
+            </div>
           </div>
           <div id="leaderboard" class="stack"></div>
         </section>

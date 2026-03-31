@@ -94,6 +94,7 @@ class AlertRecord:
 class RocketHistoryRecord:
     id: int
     telegram_user_id: int
+    slot_index: int
     currency: str
     bet_amount: float
     crash_multiplier: float
@@ -128,6 +129,29 @@ class LeaderboardEntry:
     total_profit_stars: int
     total_profit_ton: float
     best_multiplier: float
+
+
+@dataclass(slots=True)
+class WalletTransactionRecord:
+    id: int
+    telegram_user_id: int
+    action: str
+    currency: str
+    amount: float
+    balance_after: float
+    note: str
+    created_at: str
+
+
+@dataclass(slots=True)
+class ReferralEntry:
+    id: int
+    referrer_user_id: int
+    invited_user_id: int
+    invited_name: str | None
+    bonus_stars: int
+    bonus_ton: float
+    created_at: str
 
 
 class Repository:
@@ -256,6 +280,7 @@ class Repository:
                 CREATE TABLE IF NOT EXISTS rocket_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     telegram_user_id INTEGER NOT NULL,
+                    slot_index INTEGER NOT NULL DEFAULT 1,
                     currency TEXT NOT NULL,
                     bet_amount REAL NOT NULL,
                     crash_multiplier REAL NOT NULL,
@@ -263,6 +288,32 @@ class Repository:
                     payout_amount REAL NOT NULL DEFAULT 0,
                     profit_amount REAL NOT NULL DEFAULT 0,
                     status TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS wallet_transactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telegram_user_id INTEGER NOT NULL,
+                    action TEXT NOT NULL,
+                    currency TEXT NOT NULL,
+                    amount REAL NOT NULL,
+                    balance_after REAL NOT NULL,
+                    note TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS referrals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    referrer_user_id INTEGER NOT NULL,
+                    invited_user_id INTEGER NOT NULL UNIQUE,
+                    bonus_stars INTEGER NOT NULL DEFAULT 0,
+                    bonus_ton REAL NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL
                 )
                 """
@@ -291,6 +342,10 @@ class Repository:
                 conn.execute("ALTER TABLE users ADD COLUMN auto_cashout_xtr REAL")
             if "auto_cashout_ton" not in user_columns:
                 conn.execute("ALTER TABLE users ADD COLUMN auto_cashout_ton REAL")
+
+            rocket_columns = {row["name"] for row in conn.execute("PRAGMA table_info(rocket_history)").fetchall()}
+            if "slot_index" not in rocket_columns:
+                conn.execute("ALTER TABLE rocket_history ADD COLUMN slot_index INTEGER NOT NULL DEFAULT 1")
 
     def get_or_create_user(self, telegram_user_id: int, username: str | None, first_name: str | None) -> UserRecord:
         existing = self.get_user(telegram_user_id)
@@ -427,6 +482,7 @@ class Repository:
     def create_rocket_history(
         self,
         telegram_user_id: int,
+        slot_index: int,
         currency: str,
         bet_amount: float,
         crash_multiplier: float,
@@ -440,13 +496,14 @@ class Repository:
             cursor = conn.execute(
                 """
                 INSERT INTO rocket_history (
-                    telegram_user_id, currency, bet_amount, crash_multiplier, exit_multiplier,
+                    telegram_user_id, slot_index, currency, bet_amount, crash_multiplier, exit_multiplier,
                     payout_amount, profit_amount, status, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     telegram_user_id,
+                    slot_index,
                     currency,
                     bet_amount,
                     crash_multiplier,
@@ -542,6 +599,154 @@ class Repository:
             )
             for row in rows
         ]
+
+    def create_wallet_transaction(
+        self,
+        telegram_user_id: int,
+        action: str,
+        currency: str,
+        amount: float,
+        balance_after: float,
+        note: str = "",
+    ) -> WalletTransactionRecord:
+        now = self._utc_now_iso()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO wallet_transactions (
+                    telegram_user_id, action, currency, amount, balance_after, note, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    telegram_user_id,
+                    action,
+                    currency.upper(),
+                    amount,
+                    balance_after,
+                    note,
+                    now,
+                ),
+            )
+            transaction_id = cursor.lastrowid
+        return self.get_wallet_transaction(transaction_id)  # type: ignore[arg-type]
+
+    def get_wallet_transaction(self, transaction_id: int) -> WalletTransactionRecord | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM wallet_transactions WHERE id = ?", (transaction_id,)).fetchone()
+        if row is None:
+            return None
+        return self._row_to_wallet_transaction(row)
+
+    def list_wallet_transactions(self, telegram_user_id: int, limit: int = 12) -> list[WalletTransactionRecord]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM wallet_transactions
+                WHERE telegram_user_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (telegram_user_id, limit),
+            ).fetchall()
+        return [self._row_to_wallet_transaction(row) for row in rows]
+
+    def attach_referral(self, referrer_user_id: int, invited_user_id: int) -> ReferralEntry | None:
+        if referrer_user_id == invited_user_id:
+            return None
+        existing = self.get_referral_by_invited(invited_user_id)
+        if existing is not None:
+            return existing
+
+        now = self._utc_now_iso()
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT OR IGNORE INTO referrals (
+                    referrer_user_id, invited_user_id, bonus_stars, bonus_ton, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (referrer_user_id, invited_user_id, 300, 0.15, now),
+            )
+            referral_id = cursor.lastrowid
+        if not referral_id:
+            return self.get_referral_by_invited(invited_user_id)
+
+        referrer = self.get_user(referrer_user_id)
+        if referrer is not None:
+            self.change_demo_balance(referrer_user_id, 300)
+            self.change_demo_ton_balance(referrer_user_id, 0.15)
+            updated = self.get_user(referrer_user_id)
+            if updated is not None:
+                self.create_wallet_transaction(
+                    telegram_user_id=referrer_user_id,
+                    action="referral_bonus",
+                    currency="XTR",
+                    amount=300,
+                    balance_after=updated.demo_balance_stars,
+                    note=f"Bonus for invited user #{invited_user_id}",
+                )
+                self.create_wallet_transaction(
+                    telegram_user_id=referrer_user_id,
+                    action="referral_bonus",
+                    currency="TON",
+                    amount=0.15,
+                    balance_after=updated.demo_balance_ton,
+                    note=f"Bonus for invited user #{invited_user_id}",
+                )
+        return self.get_referral(referral_id)
+
+    def get_referral(self, referral_id: int) -> ReferralEntry | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    r.*,
+                    COALESCE(u.first_name, u.username, 'Player') AS invited_name
+                FROM referrals r
+                LEFT JOIN users u ON u.telegram_user_id = r.invited_user_id
+                WHERE r.id = ?
+                """,
+                (referral_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_referral(row)
+
+    def get_referral_by_invited(self, invited_user_id: int) -> ReferralEntry | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    r.*,
+                    COALESCE(u.first_name, u.username, 'Player') AS invited_name
+                FROM referrals r
+                LEFT JOIN users u ON u.telegram_user_id = r.invited_user_id
+                WHERE r.invited_user_id = ?
+                """,
+                (invited_user_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_referral(row)
+
+    def list_referrals(self, referrer_user_id: int, limit: int = 12) -> list[ReferralEntry]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    r.*,
+                    COALESCE(u.first_name, u.username, 'Player') AS invited_name
+                FROM referrals r
+                LEFT JOIN users u ON u.telegram_user_id = r.invited_user_id
+                WHERE r.referrer_user_id = ?
+                ORDER BY r.id DESC
+                LIMIT ?
+                """,
+                (referrer_user_id, limit),
+            ).fetchall()
+        return [self._row_to_referral(row) for row in rows]
 
     def create_payment(
         self,
@@ -833,6 +1038,7 @@ class Repository:
         return RocketHistoryRecord(
             id=row["id"],
             telegram_user_id=row["telegram_user_id"],
+            slot_index=int(row["slot_index"] or 1),
             currency=row["currency"],
             bet_amount=float(row["bet_amount"]),
             crash_multiplier=float(row["crash_multiplier"]),
@@ -840,6 +1046,31 @@ class Repository:
             payout_amount=float(row["payout_amount"]),
             profit_amount=float(row["profit_amount"]),
             status=row["status"],
+            created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _row_to_wallet_transaction(row: sqlite3.Row) -> WalletTransactionRecord:
+        return WalletTransactionRecord(
+            id=row["id"],
+            telegram_user_id=row["telegram_user_id"],
+            action=row["action"],
+            currency=row["currency"],
+            amount=float(row["amount"]),
+            balance_after=float(row["balance_after"]),
+            note=row["note"],
+            created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _row_to_referral(row: sqlite3.Row) -> ReferralEntry:
+        return ReferralEntry(
+            id=row["id"],
+            referrer_user_id=row["referrer_user_id"],
+            invited_user_id=row["invited_user_id"],
+            invited_name=row["invited_name"],
+            bonus_stars=int(row["bonus_stars"]),
+            bonus_ton=round(float(row["bonus_ton"]), 2),
             created_at=row["created_at"],
         )
 
