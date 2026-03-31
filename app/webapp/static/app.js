@@ -20,6 +20,7 @@ const state = {
     rocketY: 0,
     lastFrame: 0,
     roundReceivedAt: 0,
+    frozen: false,
   },
 };
 
@@ -43,6 +44,10 @@ const els = {
   profileStats: document.getElementById("profileStats"),
   walletDeposits: document.getElementById("walletDeposits"),
   walletWithdraws: document.getElementById("walletWithdraws"),
+  walletDepositAmount: document.getElementById("walletDepositAmount"),
+  walletWithdrawAmount: document.getElementById("walletWithdrawAmount"),
+  walletDepositCustom: document.getElementById("walletDepositCustom"),
+  walletWithdrawCustom: document.getElementById("walletWithdrawCustom"),
   walletStats: document.getElementById("walletStats"),
   walletHistory: document.getElementById("walletHistory"),
   resetWallet: document.getElementById("resetWallet"),
@@ -257,6 +262,10 @@ function renderProfile(profile) {
 }
 
 function resetStageState() {
+  state.visual.frozen = false;
+  state.visual.multiplier = 1;
+  state.visual.rocketX = 0;
+  state.visual.rocketY = 0;
   els.flashLayer.classList.remove("active");
   els.impactRing.classList.remove("active");
   els.crashBanner.classList.remove("show");
@@ -278,6 +287,9 @@ function applyRocketVisual() {
 
 function getPredictedMultiplier() {
   if (!state.round) {
+    if (state.visual.frozen) {
+      return state.visual.multiplier;
+    }
     return 1;
   }
   if (state.round.status === "crashed" || state.round.status === "finished") {
@@ -455,6 +467,16 @@ async function handleWalletAction(action, amount) {
   await refreshProfile();
 }
 
+async function handleCustomWalletAction(action) {
+  const input = action === "deposit" ? els.walletDepositAmount : els.walletWithdrawAmount;
+  const amount = Number(input.value || 0);
+  if (!(amount > 0)) {
+    throw new Error("invalid_wallet_amount");
+  }
+  await handleWalletAction(action, amount);
+  input.value = "";
+}
+
 async function resetWallet() {
   const result = await api("/api/wallet", {
     method: "POST",
@@ -477,6 +499,9 @@ async function pollRound() {
   updateBalances(data.balances);
 
   if (!data.round) {
+    if (state.round?.status !== "crashed") {
+      state.visual.frozen = false;
+    }
     updateRound(null);
     updateStatus("Раунд завершен. Можно запускать новый.");
     stopPolling();
@@ -488,6 +513,8 @@ async function pollRound() {
   updateRound(data.round);
 
   if (data.round.status === "crashed") {
+    state.visual.frozen = true;
+    state.visual.multiplier = data.round.current_multiplier;
     updateStatus("Ракета взорвалась.");
     if (previousRound?.status !== "crashed") {
       triggerCrashEffects();
@@ -543,6 +570,8 @@ async function cashout(slotIndex) {
 
   updateBalances(data.balances);
   if (data.round?.status === "crashed") {
+    state.visual.frozen = true;
+    state.visual.multiplier = data.round.current_multiplier;
     updateStatus("Поздно, ракета уже взорвалась.");
     triggerCrashEffects();
   } else {
@@ -623,6 +652,7 @@ function handleError(error) {
     invalid_referral_code: "Неверный реферальный код.",
     referral_not_applied: "Этот код нельзя применить.",
     enter_referral_code: "Введи реферальный код.",
+    invalid_wallet_amount: "Введи сумму больше нуля.",
   };
   updateStatus(messages[error.message] || error.message || "Произошла ошибка.");
 }
@@ -638,6 +668,8 @@ async function init() {
   els.slotInputs[0].cashout.addEventListener("click", () => cashout(1).catch(handleError));
   els.slotInputs[1].cashout.addEventListener("click", () => cashout(2).catch(handleError));
   els.resetWallet.addEventListener("click", () => resetWallet().catch(handleError));
+  els.walletDepositCustom.addEventListener("click", () => handleCustomWalletAction("deposit").catch(handleError));
+  els.walletWithdrawCustom.addEventListener("click", () => handleCustomWalletAction("withdraw").catch(handleError));
   els.copyReferral.addEventListener("click", () => copyReferral().catch(handleError));
   els.activateReferral.addEventListener("click", () => activateReferral().catch(handleError));
 
